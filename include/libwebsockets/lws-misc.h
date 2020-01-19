@@ -72,7 +72,7 @@ lws_buflist_next_segment_len(struct lws_buflist **head, uint8_t **buf);
  * Returns the number of bytes left in the current segment.  0 indicates
  * that the buflist is empty (there are no segments on the buflist).
  */
-LWS_VISIBLE LWS_EXTERN int
+LWS_VISIBLE LWS_EXTERN size_t
 lws_buflist_use_segment(struct lws_buflist **head, size_t len);
 
 /**
@@ -163,6 +163,14 @@ lws_snprintf(char *str, size_t size, const char *format, ...) LWS_FORMAT(3);
 LWS_VISIBLE LWS_EXTERN char *
 lws_strncpy(char *dest, const char *src, size_t size);
 
+/*
+ * Variation where we want to use the smaller of two lengths, useful when the
+ * source string is not NUL terminated
+ */
+#define lws_strnncpy(dest, src, size1, destsize) \
+	lws_strncpy(dest, src, (size_t)(size1 + 1) < (size_t)(destsize) ? \
+				(size_t)(size1 + 1) : (size_t)(destsize))
+
 /**
  * lws_hex_to_byte_array(): convert hex string like 0123456789ab into byte data
  *
@@ -208,8 +216,8 @@ lws_timingsafe_bcmp(const void *a, const void *b, uint32_t len);
  * Fills buf with len bytes of random.  Returns the number of bytes set, if
  * not equal to len, then getting the random failed.
  */
-LWS_VISIBLE LWS_EXTERN int
-lws_get_random(struct lws_context *context, void *buf, int len);
+LWS_VISIBLE LWS_EXTERN size_t
+lws_get_random(struct lws_context *context, void *buf, size_t len);
 /**
  * lws_daemonize(): make current process run in the background
  *
@@ -580,6 +588,15 @@ lws_dir(const char *dirpath, void *user, lws_dir_callback_function cb);
 size_t lws_get_allocated_heap(void);
 
 /**
+ * lws_get_tsi() - Get thread service index wsi belong to
+ * \param wsi:  websocket connection to check
+ *
+ * Returns more than zero (or zero if only one service thread as is the default).
+ */
+LWS_VISIBLE LWS_EXTERN int
+lws_get_tsi(struct lws *wsi);
+
+/**
  * lws_is_ssl() - Find out if connection is using SSL
  * \param wsi:	websocket connection to check
  *
@@ -637,19 +654,19 @@ typedef struct lws_humanize_unit {
 	uint64_t factor;
 } lws_humanize_unit_t;
 
-LWS_VISIBLE LWS_EXTERN const lws_humanize_unit_t humanize_schema_si[];
-LWS_VISIBLE LWS_EXTERN const lws_humanize_unit_t humanize_schema_si_bytes[];
-LWS_VISIBLE LWS_EXTERN const lws_humanize_unit_t humanize_schema_us[];
+LWS_VISIBLE LWS_EXTERN const lws_humanize_unit_t humanize_schema_si[7];
+LWS_VISIBLE LWS_EXTERN const lws_humanize_unit_t humanize_schema_si_bytes[7];
+LWS_VISIBLE LWS_EXTERN const lws_humanize_unit_t humanize_schema_us[8];
 
 /**
- * lws_humanize() - Convert possibly large number to himan-readable uints
+ * lws_humanize() - Convert possibly large number to human-readable uints
  *
  * \param buf: result string buffer
  * \param len: remaining length in \p buf
  * \param value: the uint64_t value to represent
  * \param schema: and array of scaling factors and units
  *
- * This produces a concise string representation of \p value, referening the
+ * This produces a concise string representation of \p value, referencing the
  * schema \p schema of scaling factors and units to find the smallest way to
  * render it.
  *

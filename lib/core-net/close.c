@@ -79,8 +79,10 @@ __lws_reset_wsi(struct lws *wsi)
 	 * or by specified the user. We should only free what we allocated.
 	 */
 	if (wsi->protocol && wsi->protocol->per_session_data_size &&
-	    wsi->user_space && !wsi->user_space_externally_allocated)
+	    wsi->user_space && !wsi->user_space_externally_allocated) {
 		lws_free(wsi->user_space);
+		wsi->user_space = NULL;
+	}
 
 	lws_buflist_destroy_all_segments(&wsi->buflist);
 	lws_buflist_destroy_all_segments(&wsi->buflist_out);
@@ -262,7 +264,7 @@ __lws_close_free_wsi(struct lws *wsi, enum lws_close_status reason,
 #endif
 
 #if defined(LWS_WITH_HTTP2)
-	if (wsi->h2_stream_immortal)
+	if (wsi->mux_stream_immortal)
 		lws_http_close_immortal(wsi);
 #endif
 
@@ -304,7 +306,8 @@ __lws_close_free_wsi(struct lws *wsi, enum lws_close_status reason,
 				lws_cgi_remove_and_kill(wsi->parent);
 
 			/* end the binding between us and master */
-			wsi->parent->http.cgi->stdwsi[(int)wsi->cgi_channel] =
+			if (wsi->parent->http.cgi)
+				wsi->parent->http.cgi->stdwsi[(int)wsi->cgi_channel] =
 									NULL;
 		}
 		wsi->socket_is_permanently_unusable = 1;
@@ -408,6 +411,12 @@ __lws_close_free_wsi(struct lws *wsi, enum lws_close_status reason,
 
 just_kill_connection:
 
+#if defined(LWS_WITH_FILE_OPS) && (defined(LWS_ROLE_H1) || defined(LWS_ROLE_H2))
+	if (lwsi_role_http(wsi) && lwsi_role_server(wsi) &&
+	    wsi->http.fop_fd != NULL)
+		lws_vfs_file_close(&wsi->http.fop_fd);
+#endif
+
 #if defined(LWS_WITH_SYS_ASYNC_DNS)
 	lws_async_dns_cancel(wsi);
 #endif
@@ -442,9 +451,12 @@ just_kill_connection:
 	if ((lwsi_state(wsi) == LRS_WAITING_SERVER_REPLY ||
 	     lwsi_state(wsi) == LRS_WAITING_DNS ||
 	     lwsi_state(wsi) == LRS_WAITING_CONNECT) &&
-	     !wsi->already_did_cce && wsi->protocol)
+	     !wsi->already_did_cce && wsi->protocol) {
+		static const char _reason[] = "closed before established";
+
 		lws_inform_client_conn_fail(wsi,
-				(void *)"closed before established", 24);
+			(void *)_reason, sizeof(_reason));
+	}
 #endif
 
 	/*

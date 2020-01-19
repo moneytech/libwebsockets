@@ -42,7 +42,7 @@ static uint32_t default_backoff_table[] = { 1000, 3000, 9000, 17000 };
  *	representing the library version followed by the git head hash it
  *	was built from
  */
-LWS_VISIBLE const char *
+const char *
 lws_get_library_version(void)
 {
 	return library_version;
@@ -103,6 +103,15 @@ lws_state_notify_protocol_init(struct lws_state_manager *mgr,
 {
 	struct lws_context *context = lws_container_of(mgr, struct lws_context,
 						       mgr_system);
+	int n;
+
+	/*
+	 * Deal with any attachments that were waiting for the right state
+	 * to come along
+	 */
+
+	for (n = 0; n < context->count_threads; n++)
+		lws_system_do_attach(&context->pt[n]);
 
 #if defined(LWS_WITH_SYS_DHCP_CLIENT)
 	if (current == LWS_SYSTATE_DHCP) {
@@ -142,7 +151,7 @@ lws_context_creation_completion_cb(lws_sorted_usec_list_t *sul)
 }
 #endif
 
-LWS_VISIBLE struct lws_context *
+struct lws_context *
 lws_create_context(const struct lws_context_creation_info *info)
 {
 	struct lws_context *context = NULL;
@@ -227,7 +236,7 @@ lws_create_context(const struct lws_context_creation_info *info)
 	context->username = info->username;
 	context->groupname = info->groupname;
 	context->system_ops = info->system_ops;
-	context->pt_serv_buf_size = s1;
+	context->pt_serv_buf_size = (unsigned int)s1;
 	context->udp_loss_sim_tx_pc = info->udp_loss_sim_tx_pc;
 	context->udp_loss_sim_rx_pc = info->udp_loss_sim_rx_pc;
 
@@ -242,6 +251,10 @@ lws_create_context(const struct lws_context_creation_info *info)
 	context->detailed_latency_cb = info->detailed_latency_cb;
 	context->detailed_latency_filepath = info->detailed_latency_filepath;
 	context->latencies_fd = -1;
+#endif
+#if defined(LWS_WITHOUT_EXTENSIONS)
+        if (info->extensions)
+                lwsl_warn("%s: LWS_WITHOUT_EXTENSIONS but extensions ptr set\n", __func__);
 #endif
 #endif
 
@@ -339,14 +352,13 @@ lws_create_context(const struct lws_context_creation_info *info)
 #else
 	context->max_fds = sysconf(_SC_OPEN_MAX);
 #endif
-#endif
-
 	if (context->max_fds < 0) {
 		lwsl_err("%s: problem getting process max files\n",
 			 __func__);
 
 		return NULL;
 	}
+#endif
 
 	/*
 	 * deal with any max_fds override, if it's reducing (setting it to
@@ -471,6 +483,14 @@ lws_create_context(const struct lws_context_creation_info *info)
 	context->default_retry.secs_since_valid_ping = 300;
 	context->default_retry.secs_since_valid_hangup = 310;
 
+	if (info->retry_and_idle_policy &&
+	    info->retry_and_idle_policy->secs_since_valid_ping) {
+		context->default_retry.secs_since_valid_ping =
+				info->retry_and_idle_policy->secs_since_valid_ping;
+		context->default_retry.secs_since_valid_hangup =
+				info->retry_and_idle_policy->secs_since_valid_hangup;
+	}
+
 	/*
 	 * Allocate the per-thread storage for scratchpad buffers,
 	 * and header data pool
@@ -509,6 +529,10 @@ lws_create_context(const struct lws_context_creation_info *info)
 				ar->pt_init_destroy(context, info,
 						    &context->pt[n], 0);
 		} LWS_FOR_EVERY_AVAILABLE_ROLE_END;
+
+#if defined(LWS_WITH_CGI)
+		role_ops_cgi.pt_init_destroy(context, info, &context->pt[n], 0);
+#endif
 	}
 
 	lwsl_info(" Threads: %d each %d fds\n", context->count_threads,
@@ -595,10 +619,8 @@ lws_create_context(const struct lws_context_creation_info *info)
 				goto bail;
 		}
 
-#if !defined(LWS_AMAZON_RTOS)
 	if (lws_create_event_pipes(context))
 		goto bail;
-#endif
 #endif
 
 	lws_context_init_ssl_library(info);
@@ -640,7 +662,7 @@ lws_create_context(const struct lws_context_creation_info *info)
 		 */
 
 		struct lws_context_creation_info ii;
-		const struct lws_protocols *pp[3];
+		const struct lws_protocols *pp[4];
 		struct lws_vhost *vh;
 #if defined(LWS_WITH_SYS_ASYNC_DNS)
 		extern const struct lws_protocols lws_async_dns_protocol;
@@ -723,10 +745,7 @@ lws_create_context(const struct lws_context_creation_info *info)
 #if defined(LWS_WITH_PEER_LIMITS)
 			lws_free_set_NULL(context->pl_hash_table);
 #endif
-			lws_free_set_NULL(context->pt[0].fds);
-			lws_plat_context_late_destroy(context);
-			lws_free_set_NULL(context);
-			return NULL;
+			goto fail_clean_pipes;
 		}
 
 	lws_context_init_extensions(info, context);
@@ -761,6 +780,18 @@ lws_create_context(const struct lws_context_creation_info *info)
 
 	return context;
 
+#if defined(LWS_WITH_NETWORK)
+fail_clean_pipes:
+	for (n = 0; n < context->count_threads; n++)
+		lws_destroy_event_pipe(context->pt[n].pipe_wsi);
+
+	lws_free_set_NULL(context->pt[0].fds);
+	lws_plat_context_late_destroy(context);
+	lws_free_set_NULL(context);
+
+	return NULL;
+#endif
+
 bail:
 	lws_context_destroy(context);
 
@@ -784,7 +815,7 @@ fail_event_libs:
 	return NULL;
 }
 
-LWS_VISIBLE LWS_EXTERN int
+int
 lws_context_is_deprecated(struct lws_context *context)
 {
 	return context->deprecated;
@@ -836,6 +867,10 @@ lws_context_destroy3(struct lws_context *context)
 			if (ar->pt_init_destroy)
 				ar->pt_init_destroy(context, NULL, pt, 1);
 		} LWS_FOR_EVERY_AVAILABLE_ROLE_END;
+
+#if defined(LWS_WITH_CGI)
+		role_ops_cgi.pt_init_destroy(context, NULL, pt, 1);
+#endif
 
 		if (context->event_loop_ops->destroy_pt)
 			context->event_loop_ops->destroy_pt(context, n);
@@ -972,7 +1007,7 @@ lws_context_destroy2(struct lws_context *context)
  * Begin the context takedown
  */
 
-LWS_VISIBLE void
+void
 lws_context_destroy(struct lws_context *context)
 {
 #if defined(LWS_WITH_NETWORK)

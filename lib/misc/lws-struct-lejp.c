@@ -32,7 +32,7 @@ lws_struct_schema_only_lejp_cb(struct lejp_ctx *ctx, char reason)
 {
 	lws_struct_args_t *a = (lws_struct_args_t *)ctx->user;
 	const lws_struct_map_t *map = a->map_st[ctx->pst_sp];
-	int n = a->map_entries_st[ctx->pst_sp];
+	size_t n = a->map_entries_st[ctx->pst_sp];
 	lejp_callback cb = map->lejp_cb;
 
 	if (reason != LEJPCB_VAL_STR_END || ctx->path_match != 1)
@@ -92,8 +92,8 @@ lws_struct_default_lejp_cb(struct lejp_ctx *ctx, char reason)
 	lws_struct_args_t *args = (lws_struct_args_t *)ctx->user;
 	const lws_struct_map_t *map, *pmap = NULL;
 	uint8_t *ch;
+	size_t n;
 	char *u;
-	int n;
 
 	if (reason == LEJPCB_ARRAY_END) {
 		lejp_parser_pop(ctx);
@@ -103,7 +103,6 @@ lws_struct_default_lejp_cb(struct lejp_ctx *ctx, char reason)
 
 	if (reason == LEJPCB_ARRAY_START) {
 		map = &args->map_st[ctx->pst_sp][ctx->path_match - 1];
-		n = args->map_entries_st[ctx->pst_sp];
 
 		if (map->type == LSMT_LIST)
 			lws_struct_lejp_push(ctx, args, map, NULL);

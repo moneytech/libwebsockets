@@ -32,7 +32,7 @@ lws_ev_hrtimer_cb(struct ev_loop *loop, struct ev_timer *watcher, int revents)
 	lws_usec_t us;
 
 	lws_pt_lock(pt, __func__);
-	us = __lws_sul_check(&pt->pt_sul_owner, lws_now_usecs());
+	us = __lws_sul_service_ripe(&pt->pt_sul_owner, lws_now_usecs());
 	if (us) {
 		ev_timer_set(&pt->ev.hrtimer, ((float)us) / 1000000.0, 0);
 		ev_timer_start(pt->ev.io_loop, &pt->ev.hrtimer);
@@ -59,7 +59,7 @@ lws_ev_idle_cb(struct ev_loop *loop, struct ev_idle *handle, int revents)
 	/* account for hrtimer */
 
 	lws_pt_lock(pt, __func__);
-	us = __lws_sul_check(&pt->pt_sul_owner, lws_now_usecs());
+	us = __lws_sul_service_ripe(&pt->pt_sul_owner, lws_now_usecs());
 	if (us) {
 		ev_timer_set(&pt->ev.hrtimer, ((float)us) / 1000000.0, 0);
 		ev_timer_start(pt->ev.io_loop, &pt->ev.hrtimer);
@@ -104,7 +104,7 @@ lws_accept_cb(struct ev_loop *loop, struct ev_io *watcher, int revents)
 	ev_idle_start(pt->ev.io_loop, &pt->ev.idle);
 }
 
-LWS_VISIBLE void
+void
 lws_ev_sigint_cb(struct ev_loop *loop, struct ev_signal *watcher, int revents)
 {
 	struct lws_context *context = watcher->data;

@@ -53,7 +53,7 @@ rops_handle_POLLIN_raw_skt(struct lws_context_per_thread *pt, struct lws *wsi,
 	if (!lwsi_role_client(wsi) &&  lwsi_state(wsi) != LRS_ESTABLISHED) {
 
 		lwsl_debug("%s: %p: wsistate 0x%x\n", __func__, wsi,
-			   wsi->wsistate);
+			   (int)wsi->wsistate);
 
 		if (lwsi_state(wsi) != LRS_SSL_INIT)
 			if (lws_server_socket_service_ssl(wsi,
@@ -67,6 +67,8 @@ rops_handle_POLLIN_raw_skt(struct lws_context_per_thread *pt, struct lws *wsi,
 	if ((pollfd->revents & pollfd->events & LWS_POLLIN) &&
 	    /* any tunnel has to have been established... */
 	    lwsi_state(wsi) != LRS_SSL_ACK_PENDING &&
+	    /* we are actually connected */
+	    lwsi_state(wsi) != LRS_WAITING_CONNECT &&
 	    !(wsi->favoured_pollin &&
 	      (pollfd->revents & pollfd->events & LWS_POLLOUT))) {
 
@@ -137,8 +139,9 @@ try_pollout:
 		return LWS_HPI_RET_HANDLED;
 
 #if defined(LWS_WITH_CLIENT)
-	if (lwsi_state(wsi) == LRS_WAITING_CONNECT)
-		lws_client_connect_4_established(wsi, NULL, 0);
+	if (lwsi_state(wsi) == LRS_WAITING_CONNECT &&
+	    !lws_client_connect_3_connect(wsi, NULL, NULL, 0, NULL))
+		return LWS_HPI_RET_WSI_ALREADY_DIED;
 #endif
 
 	/* one shot */
@@ -228,7 +231,8 @@ rops_client_bind_raw_skt(struct lws *wsi,
 
 	/* we are a fallback if nothing else matched */
 
-	if (!i->local_protocol_name || strcmp(i->local_protocol_name, "raw-proxy"))
+	if (!i->local_protocol_name ||
+	    strcmp(i->local_protocol_name, "raw-proxy"))
 		lws_role_transition(wsi, LWSIFR_CLIENT, LRS_UNCONNECTED,
 			    &role_ops_raw_skt);
 
@@ -236,7 +240,7 @@ rops_client_bind_raw_skt(struct lws *wsi,
 }
 #endif
 
-struct lws_role_ops role_ops_raw_skt = {
+const struct lws_role_ops role_ops_raw_skt = {
 	/* role name */			"raw-skt",
 	/* alpn id */			NULL,
 	/* check_upgrades */		NULL,

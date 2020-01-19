@@ -271,6 +271,7 @@ struct _lws_http_mode_related {
 	unsigned int content_length_explicitly_zero:1;
 	unsigned int did_stream_close:1;
 	unsigned int multipart:1;
+	unsigned int cgi_transaction_complete:1;
 	unsigned int multipart_issue_boundary:1;
 };
 
@@ -299,7 +300,7 @@ enum lws_check_basic_auth_results {
 };
 
 enum lws_check_basic_auth_results
-lws_check_basic_auth(struct lws *wsi, const char *basic_auth_login_file);
+lws_check_basic_auth(struct lws *wsi, const char *basic_auth_login_file, unsigned int auth_mode);
 
 int
 lws_unauthorised_basic_auth(struct lws *wsi);

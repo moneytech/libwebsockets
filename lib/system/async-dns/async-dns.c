@@ -1,7 +1,7 @@
 /*
  * libwebsockets - small server side websockets and web server implementation
  *
- * Copyright (C) 2010 - 2019 Andy Green <andy@warmcat.com>
+ * Copyright (C) 2010 - 2020 Andy Green <andy@warmcat.com>
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to
@@ -172,7 +172,11 @@ lws_async_dns_writeable(struct lws *wsi, lws_adns_q_t *q)
 
 	/* we hack b0 of the tid to be 0 = A, 1 = AAAA */
 
-	lws_ser_wu16be(&p[DHO_TID], which ? q->tid | 1 : q->tid);
+	lws_ser_wu16be(&p[DHO_TID],
+#if defined(LWS_WITH_IPV6)
+			which ? q->tid | 1 :
+#endif
+			q->tid);
 	lws_ser_wu16be(&p[DHO_FLAGS], (1 << 8));
 	lws_ser_wu16be(&p[DHO_NQUERIES], 1);
 
@@ -320,7 +324,7 @@ ok:
 
 	context->async_dns.wsi = lws_create_adopt_udp(context->vhost_list, ads,
 				      53, 0, lws_async_dns_protocol.name, NULL,
-				      NULL, &retry_policy);
+				      NULL, NULL, &retry_policy);
 	if (!dns->wsi) {
 		lwsl_err("%s: foreign socket adoption failed\n", __func__);
 		return 1;

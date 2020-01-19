@@ -22,8 +22,12 @@
  * IN THE SOFTWARE.
  */
 
+#if !defined(NO_GNU_SOURCE_THIS_TIME)
 #define NO_GNU_SOURCE_THIS_TIME
+#endif
+#if !defined(_DARWIN_C_SOURCE)
 #define _DARWIN_C_SOURCE
+#endif
 
 #include <libwebsockets.h>
 #include "private-lib-core.h"
@@ -106,7 +110,7 @@ lws_dir(const char *dirpath, void *user, lws_dir_callback_function cb)
 		 * files are LDOT_UNKNOWN
 		 */
 
-#if defined(__illumos__)
+#if defined(__sun)
         struct stat s;
         stat(namelist[i]->d_name, &s);
 		switch (s.st_mode) {
